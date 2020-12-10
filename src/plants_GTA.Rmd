@@ -1,0 +1,467 @@
+---
+title: "Plants of TO"
+author: "Garland Xie"
+date: "09/12/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library}
+library(rdryad)
+library(brranching)
+library(readxl)
+library(dplyr)
+library(janitor)
+library(ggplot2)
+library(forcats)
+library(gghighlight)
+```
+
+# Import 
+
+```{r}
+# download from DRYAD
+plants_link <- dryad_download(dois = "10.5061/dryad.1ns1rn8sg")
+
+# read csv file 
+plants <- read.csv(plants_link[[1]])
+```
+
+```{r}
+# download from DRYAD
+traits_link <- dryad_download(
+  dois = "10.5061/dryad.6rn879c"
+  )
+
+# read csv file 
+traits_leaf <- read_excel(
+  traits_link[[1]][1], 
+  sheet = "Traits 1"
+      )
+
+traits_stature <- read_excel(
+  traits_link[[1]][1], 
+  sheet = "Traits 2"
+      )
+
+traits_CN <- read_excel(
+  traits_link[[1]][1],
+  sheet = "Traits 3"
+)
+```
+
+# Data cleaning
+
+Unit measurements for each plant functional trait:
+
+* Leaf dry matter content (unitless)
+* Specific leaf area (mm-squared/mg)
+* Plant height (m)
+* Stem width (mm)
+* Number of leaves (unitless)
+* Leaf N content (%)
+* Leaf C content (%)
+* Leaf C:N (unitless)
+
+
+```{r clean leaf traits for each site}
+leaf_tidy <- traits_leaf %>%
+  clean_names() %>%
+  select(
+    species_code, 
+    site_code,
+    site_type,
+    replicate = replicate_number,
+    ldmc, 
+    sla = sla_mm_2_mg
+  ) %>%
+  filter(site_type == "meadow") %>%
+  group_by(species_code, site_code) %>%
+  summarize(mean_ldmc = mean(ldmc, na.rm = TRUE),
+            sd_ldm = sd(ldmc, na.rm = TRUE),
+            mean_sla = mean(sla, na.rm = TRUE),
+            sd_sla = sd(sla, na.rm = TRUE),
+            n = n())
+  
+leaf_tidy
+```
+
+```{r clean leaf traits across all sites}
+leaf_tidy2 <- traits_leaf %>%
+  clean_names() %>%
+  select(
+    species_code, 
+    site_code,
+    site_type,
+    replicate = replicate_number,
+    ldmc, 
+    sla = sla_mm_2_mg
+  ) %>%
+  filter(site_type == "meadow") %>%
+  group_by(species_code) %>%
+  summarize(mean_ldmc = mean(ldmc, na.rm = TRUE),
+            sd_ldm = sd(ldmc, na.rm = TRUE),
+            mean_sla = mean(sla, na.rm = TRUE),
+            sd_sla = sd(sla, na.rm = TRUE),
+            n = n())
+  
+leaf_tidy2
+```
+
+```{r clean stature for each site}
+stature_tidy <- traits_stature %>%
+  clean_names() %>%
+  filter(site_type == "meadow") %>%
+  select(
+    species_code, 
+    site_code,
+    site_type,
+    height = height_m,
+    stem_width = stem_width_mm, 
+    num_leaves = number_of_leaves) %>%
+  group_by(species_code, site_code) %>%
+  summarize(
+    mean_height = mean(height, na.rm = TRUE),
+    sd_height = sd(height, na.rm = TRUE),
+    mean_stem = mean(stem_width, na.rm = TRUE),
+    sd_stem = sd(stem_width, na.rm = TRUE),
+    mean_num_leaves = mean(num_leaves, na.rm = TRUE),
+    sd_num_leaves = sd(num_leaves, na.rm = TRUE),
+    rep = n()
+  ) 
+
+stature_tidy
+```
+
+```{r clean stature traits across all sites}
+stature_tidy2 <- traits_stature %>%
+  clean_names() %>%
+  filter(site_type == "meadow") %>%
+  select(
+    species_code, 
+    height = height_m,
+    stem_width = stem_width_mm, 
+    num_leaves = number_of_leaves) %>%
+  group_by(species_code) %>%
+  summarize(
+    mean_height = mean(height, na.rm = TRUE),
+    sd_height = sd(height, na.rm = TRUE),
+    mean_stem = mean(stem_width, na.rm = TRUE),
+    sd_stem = sd(stem_width, na.rm = TRUE),
+    mean_num_leaves = mean(num_leaves, na.rm = TRUE),
+    sd_num_leaves = sd(num_leaves, na.rm = TRUE),
+    rep = n()
+  ) 
+
+stature_tidy2
+```
+
+
+```{r clean CN for each site}
+CN_tidy <- traits_CN %>%
+  clean_names() %>%
+  filter(site_type == "meadow") %>%
+  select(
+    species_code = species, 
+    site_code, 
+    site_type, 
+    leaf_carbon_percent, 
+    leaf_nitrogen_percent) %>%
+  group_by(species_code, site_code) %>%
+  summarize(
+    mean_leaf_C = mean(leaf_carbon_percent, na.rm = TRUE),
+    sd_leaf_C = sd(leaf_carbon_percent, na.rm = TRUE),
+    mean_leaf_N = mean(leaf_nitrogen_percent, na.rm = TRUE),
+    sd_leaf_N = sd(leaf_nitrogen_percent, na.rm = TRUE), 
+    n = n()) 
+
+CN_tidy
+```
+
+```{r clean CN traits across all sites}
+CN_tidy2 <- traits_CN %>%
+  clean_names() %>%
+  filter(site_type == "meadow") %>%
+  select(
+    species_code = species, 
+    site_code, 
+    leaf_carbon_percent, 
+    leaf_nitrogen_percent) %>%
+  group_by(species_code) %>%
+  summarize(
+    mean_leaf_C = mean(leaf_carbon_percent, na.rm = TRUE),
+    sd_leaf_C = sd(leaf_carbon_percent, na.rm = TRUE),
+    mean_leaf_N = mean(leaf_nitrogen_percent, na.rm = TRUE),
+    sd_leaf_N = sd(leaf_nitrogen_percent, na.rm = TRUE), 
+    n = n()) 
+
+CN_tidy2
+```
+
+# Exploratory analysis: summary statistics
+
+## Plant height 
+
+```{r plot mean height at each meadow site, fig.height=6, fig.width=5, message=FALSE, warning=FALSE}
+
+stature_tidy %>%
+  mutate(
+    mean_height = mean_height * 100,
+    sd_height = sd_height * 100) %>%
+ggplot(aes(y = species_code, x = mean_height)) +
+  geom_point() + 
+  gghighlight(species_code == "VIRO") + 
+  facet_wrap(~site_code) + 
+  labs(x = "Mean height (cm)", y = NULL) +
+  theme_bw() +
+  theme(axis.text.y = element_blank())
+```
+
+
+```{r plot mean height across all sites, fig.height=4, fig.width=4}
+
+stature_tidy2 %>%
+  mutate(
+    mean_height = mean_height * 100,
+    sd_height = sd_height * 100,
+    species_code = factor(species_code),
+    species_code = fct_reorder(species_code, mean_height)) %>%
+ggplot(aes(y = species_code, x = mean_height)) +
+  geom_point() + 
+  gghighlight(species_code == "VIRO") + 
+  labs(x = "Mean height (cm)", y = NULL) +
+  theme_bw() 
+```
+
+## SLA
+
+
+```{r plot mean LDMC at each meadow site, fig.height=4, fig.width=4, message=FALSE}
+leaf_tidy %>%
+ggplot(aes(y = species_code, x = mean_sla)) +  
+  geom_point() +
+  facet_wrap(~site_code) + 
+  gghighlight(species_code == "VIRO") + 
+  labs(x = "Mean specific leaf area (mm-squared per mg)", y = NULL) +
+  theme_bw() +
+  theme(axis.text.y = element_blank())
+```
+```{r plot mean height across all sites, fig.height=4, fig.width=4}
+
+leaf_tidy2 %>%
+  mutate(species_code = factor(species_code),
+         species_code = fct_reorder(species_code, mean_sla)) %>%
+ggplot(aes(y = species_code, x = mean_sla)) +
+  geom_point() + 
+  gghighlight(species_code == "VIRO") + 
+  labs(x = "Mean specific leaf area (mm-squared per mg)", y = NULL) +
+  theme_bw() 
+```
+
+## LDMC
+
+```{r plot mean LDMC at each meadow site, fig.height=5, fig.width=4, message=FALSE}
+leaf_tidy %>%
+ggplot(aes(y = species_code, x = mean_ldmc)) +  
+  geom_point() +
+  facet_wrap(~site_code) + 
+  gghighlight(species_code == "VIRO") + 
+  labs(x = "Mean leaf dry matter content", y = NULL) +
+  theme_bw() +
+  theme(axis.text.y = element_blank())
+```
+
+```{r plot mean LDMC across all meadow sites, fig.height=4, fig.width=4}
+leaf_tidy2 %>%
+  mutate(species_code = factor(species_code),
+         species_code = fct_reorder(species_code, mean_ldmc, .desc = TRUE)) %>%
+  ggplot(aes(y = species_code, x = mean_ldmc)) +  
+  geom_point() +
+  gghighlight(species_code == "VIRO") + 
+  labs(x = "Mean leaf dry matter content", y = NULL) +
+  theme_bw() 
+```
+
+## Leaf C content 
+
+```{r plot mean leaf C at each site, fig.height=5, fig.width=5, message=FALSE}
+CN_tidy %>% 
+ggplot(aes(y = species_code, x = mean_leaf_C)) +
+  geom_point() +
+  gghighlight(species_code == "VIRO") + 
+  facet_wrap(~site_code) +
+  labs(x = "Mean leaf C content (%)", y = NULL) + 
+  theme_bw() +
+  theme(axis.text.y = element_blank())
+```
+
+```{r plot mean leaf C across all sites, fig.height=5, fig.width=5, message=FALSE}
+CN_tidy2 %>% 
+  mutate(species_code = factor(species_code),
+         species_code = fct_reorder(species_code, mean_leaf_C)) %>%
+ggplot(aes(y = species_code, x = mean_leaf_C)) +
+  geom_point() +
+  gghighlight(species_code == "VIRO") + 
+  labs(x = "Mean leaf C content (%)", y = NULL) + 
+  theme_bw() 
+```
+
+## Leaf N content
+
+```{r plot mean leaf N at each site, fig.height=4, fig.width=4, message=FALSE}
+CN_tidy %>% 
+ggplot(aes(y = species_code, x = mean_leaf_N)) +
+  geom_point() +
+  gghighlight(species_code == "VIRO") + 
+  facet_wrap(~site_code) +
+  labs(x = "Mean leaf N content (%)", y = NULL) + 
+  theme_bw() +
+  theme(axis.text.y = element_blank())
+```
+
+```{r plot mean leaf N across all sites, fig.height=4, fig.width=4, message=FALSE}
+CN_tidy2 %>% 
+  mutate(species_code = factor(species_code),
+         species_code = fct_reorder(species_code, mean_leaf_N)
+         ) %>%
+  ggplot(aes(y = species_code, x = mean_leaf_N)) +
+  geom_point() +
+  gghighlight(species_code == "VIRO") + 
+  labs(x = "Mean leaf N content (%)", y = NULL) + 
+  theme_bw() 
+```
+
+## Stem width 
+
+```{r plot mean stem width for each site, fig.height=4, fig.width=4}
+stature_tidy %>%
+  ggplot(aes(y = species_code, x = mean_stem)) +
+  geom_point() + 
+  gghighlight(species_code == "VIRO") + 
+  facet_wrap(~site_code) + 
+  labs(x = "Mean height (cm)", y = NULL) +
+  theme_bw() +
+  theme(axis.text.y = element_blank())
+```
+```{r plot mean stem width across all sites, fig.height=4, fig.width=4}
+stature_tidy2 %>%
+  mutate(species_code = factor(species_code),
+         species_code = fct_reorder(species_code, mean_stem)) %>%
+  ggplot(aes(y = species_code, x = mean_stem)) +
+  geom_point() + 
+  gghighlight(species_code == "VIRO") + 
+  labs(x = "Mean stem width (nm)", y = NULL) +
+  theme_bw() 
+```
+## Number of Leaves
+
+```{r plot mean number of leaves at each site, fig.height=4, fig.width=4}
+
+stature_tidy %>%
+  ggplot(aes(y = species_code, x = mean_num_leaves)) +
+  geom_point() + 
+  gghighlight(species_code == "VIRO") + 
+  facet_wrap(~site_code) + 
+  labs(x = "Mean number of leaves", y = NULL) +
+  theme_bw() +
+  theme(axis.text.y = element_blank())
+  
+```
+
+```{r plot mean number of leaves across all sites, fig.height=4, fig.width=4, message=FALSE}
+stature_tidy2 %>%
+  mutate(species_code = factor(species_code),
+         species_code = fct_reorder(species_code, mean_num_leaves)) %>%
+  ggplot(aes(y = species_code, x = mean_num_leaves)) +
+  geom_point() + 
+  gghighlight(species_code == "VIRO") + 
+  labs(x = "Mean number of leaves", y = NULL) +
+  theme_bw() 
+```
+
+
+# Explotatory analysis: PCA
+
+```{r clean trait data into a single df}
+traits <- CN_tidy2 %>%
+  inner_join(leaf_tidy2, by = "species_code") %>%
+  inner_join(stature_tidy2, by = "species_code") %>%
+  select(
+    species_code, 
+    mean_leaf_C,
+    mean_leaf_N,
+    mean_ldmc, 
+    mean_height, 
+    mean_stem, 
+    mean_num_leaves,
+    mean_sla
+  ) 
+
+traits2 <- select(traits, -species_code)
+```
+
+```{r}
+traits_pca <- prcomp(traits2, center = TRUE, scale = TRUE)  
+
+# scree plot
+plot(traits_pca)
+```
+
+```{r PC1 traits, fig.height=5, fig.width=5}
+data.frame(
+  trait = rownames(traits_pca$rotation),
+  PC1  = traits_pca$rotation[,1],
+  PC2  = traits_pca$rotation[,2]
+  ) %>%
+mutate(trait = factor(trait),
+       trait = fct_reorder(trait, PC1)) %>%
+ggplot(aes(y = trait, x = PC1)) + 
+  geom_col() +
+  labs(y = NULL) + 
+  theme_bw()
+```
+
+```{r PC2 traits, fig.height=5, fig.width=5}
+data.frame(
+  trait = rownames(traits_pca$rotation),
+  PC1  = traits_pca$rotation[,1],
+  PC2  = traits_pca$rotation[,2]
+  ) %>%
+mutate(trait = factor(trait),
+       trait = fct_reorder(trait, PC2)) %>%
+ggplot(aes(y = trait, x = PC2)) + 
+  geom_col() +
+  labs(y = NULL) + 
+  theme_bw()
+```
+
+```{r pca ind, fig.height=5, fig.width=5}
+data.frame(
+  code = traits$species_code,
+  PC1  = traits_pca$x[,1],
+  PC2  = traits_pca$x[,2]
+  ) %>%
+  
+ggplot(aes(x = PC1, y = PC2, label = code)) + 
+  geom_text() + 
+  gghighlight(code %in% c("VIRO", "ALPE")) + 
+  geom_hline(yintercept = 0, linetype = "dashed") + 
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  theme_bw()
+```
+
+# Phylogenetic tree
+
+```{r}
+tree <- phylomatic(
+  taxa = plants$SCIENTIFIC_NAME,
+  taxnames = TRUE, 
+  get = 'POST',
+  method = 'phylomatic',
+  storedtree = 'zanne2014'
+)
+```
+
